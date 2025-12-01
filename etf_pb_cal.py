@@ -1,23 +1,19 @@
+# etf_pb_calculator.py
 import pandas as pd
-import os
-import time
-from io import StringIO
-from stock_pbcal import init_database, calculate_daily_pb
+import sqlite3
+from database import DB_FILENAME, get_pb_from_db
 
-def process_etf_stocks(etf_code):
+def read_etf_holdings(etf_code):
     """
-    处理ETF中的所有股票，计算并保存PB值到数据库
+    读取ETF持仓CSV文件
     
     Args:
         etf_code (str): ETF代码
+        
+    Returns:
+        pandas.DataFrame: ETF持仓数据
     """
-    # 构建文件路径
     filename = f"hold_{etf_code}.csv"
-    
-    # 检查文件是否存在
-    if not os.path.exists(filename):
-        print(f"文件 {filename} 不存在")
-        return
     
     try:
         # 读取原始文件内容
@@ -31,31 +27,11 @@ def process_etf_stocks(etf_code):
         processed_lines = [lines[0]]  # 保留标题行
         
         for line in lines[1:]:
-            # 使用正则表达式匹配并修复格式
-            # 格式应该是: 序号,股票代码,股票名称,最新价,涨跌幅,相关资讯,占净值比例,持股数(万股),持仓市值(万元)
-            # 但实际因为逗号分隔符问题变成了更多部分
-            
             # 分割行
             parts = line.split(',')
             
-            if len(parts) == 11:
-                # 正确的情况应该是9列，但现在是11列，说明有两个数值字段被分割了
-                # 重新组合: 第7和第8部分合并为持股数，第9和第10部分合并为持仓市值
-                new_line = ','.join([
-                    parts[0],  # 序号
-                    parts[1],  # 股票代码
-                    parts[2],  # 股票名称
-                    parts[3],  # 最新价
-                    parts[4],  # 涨跌幅
-                    parts[5],  # 相关资讯
-                    parts[6],  # 占净值比例
-                    parts[7] + ',' + parts[8],  # 合并的持股数
-                    parts[9] + ',' + parts[10]   # 合并的持仓市值
-                ])
-                processed_lines.append(new_line)
-            elif len(parts) == 10:
+            if len(parts) == 10:
                 # 10列的情况，有一个数值字段被分割了
-                # 判断哪个字段被分割（通常是较大的数值）
                 new_line = ','.join([
                     parts[0],  # 序号
                     parts[1],  # 股票代码
@@ -64,50 +40,172 @@ def process_etf_stocks(etf_code):
                     parts[4],  # 涨跌幅
                     parts[5],  # 相关资讯
                     parts[6],  # 占净值比例
-                    parts[7],  # 合并的持股数
-                    parts[8] + parts[9]   # 持仓市值
+                    parts[7],  # 持股数
+                    parts[8] + parts[9]   # 合并的持仓市值
                 ])
                 processed_lines.append(new_line)
             else:
                 # 其他情况直接保留
                 processed_lines.append(line)
         
-        # 使用StringIO创建文件对象供pandas读取
-        processed_content = '\n'.join(processed_lines)
-        df = pd.read_csv(StringIO(processed_content))
+        # 使用pandas读取处理后的数据
+        df = pd.DataFrame([line.split(',') for line in processed_lines][1:], 
+                          columns=[col.strip() for col in processed_lines[0].split(',')])
         
-        # 初始化数据库
-        init_database()
+        # 清理数据
+        df['股票代码'] = df['股票代码'].astype(str).str.strip()
+        df['占净值比例'] = df['占净值比例'].str.rstrip('%').astype(float) / 100
         
-        # 提取所有股票代码
-        stock_codes = df['股票代码'].tolist()
+        print(f"成功读取ETF {etf_code} 的持仓数据，共{len(df)}只股票")
+        return df
         
-        print(f"list:{stock_codes}")
-        print(f"ETF {etf_code} 包含 {len(stock_codes)} 只股票")
-        print("开始计算各股票的PB值...")
-        
-        # 遍历所有股票代码并计算PB
-        for i, stock_code in enumerate(stock_codes, 1):
-            print(f"\n[{i}/{len(stock_codes)}] 正在处理股票: {stock_code}")
-            try:
-                pb_result = calculate_daily_pb(str(stock_code))
-                #增加等待耗时5s，避免频繁调用
-                time.sleep(5)
-                if pb_result is not None:
-                    latest_pb = pb_result.iloc[-1]['pb']
-                    print(f"股票 {stock_code} 的最新PB值: {latest_pb:.2f}")
-                else:
-                    print(f"股票 {stock_code} 的PB计算失败")
-            except Exception as e:
-                print(f"处理股票 {stock_code} 时出现错误: {e}")
-                
-        print(f"\n已完成ETF {etf_code} 中所有股票的PB计算和保存")
-        
+    except FileNotFoundError:
+        print(f"文件 {filename} 不存在")
+        return None
     except Exception as e:
-        print(f"处理文件时出错: {e}")
+        print(f"读取CSV文件时出错: {e}")
+        return None
 
-# 直接指定ETF代码
+def get_latest_pb_for_stock(stock_code):
+    """
+    获取单个股票的最新PB值
+    
+    Args:
+        stock_code (str): 股票代码
+        
+    Returns:
+        float: 最新PB值，如果无数据返回None
+    """
+    try:
+        # 获取股票的PB数据
+        pb_data = get_pb_from_db(stock_code)
+        
+        if not pb_data.empty:
+            # 返回最新的PB值
+            latest_pb = pb_data.iloc[-1]['pb']
+            return latest_pb
+        else:
+            print(f"未找到股票 {stock_code} 的PB数据")
+            return None
+            
+    except Exception as e:
+        print(f"获取股票 {stock_code} 的PB值时出错: {e}")
+        return None
+
+def calculate_etf_pb(etf_code):
+    """
+    根据ETF持仓和个股PB数据计算ETF的加权平均PB值
+    
+    Args:
+        etf_code (str): ETF代码
+        
+    Returns:
+        dict: 包含计算结果的字典
+    """
+    # 读取ETF持仓数据
+    etf_holdings = read_etf_holdings(etf_code)
+    if etf_holdings is None:
+        return None
+    
+    # 存储每只股票的PB值
+    stock_pb_data = []
+    total_weight = 0
+    weighted_pb_sum = 0
+    
+    print(f"\n开始计算ETF {etf_code} 的PB值...")
+    print("=" * 50)
+    
+    # 遍历每只股票，获取其PB值
+    for index, row in etf_holdings.iterrows():
+        stock_code = row['股票代码'].strip()
+        weight = row['占净值比例']
+        
+        print(f"正在处理股票 {stock_code} ({row['股票名称']})，权重: {weight*100:.2f}%")
+        
+        # 获取股票最新PB值
+        pb_value = get_latest_pb_for_stock(stock_code)
+        
+        if pb_value is not None:
+            weighted_contribution = weight * pb_value
+            total_weight += weight
+            weighted_pb_sum += weighted_contribution
+            
+            stock_pb_data.append({
+                '股票代码': stock_code,
+                '股票名称': row['股票名称'],
+                '权重': weight,
+                'PB值': pb_value,
+                '加权贡献': weighted_contribution
+            })
+            
+            print(f"  -> PB值: {pb_value:.4f}, 加权贡献: {weighted_contribution:.6f}")
+        else:
+            print(f"  -> 无法获取PB值，跳过该股票")
+    
+    # 计算加权平均PB值
+    if total_weight > 0:
+        weighted_average_pb = weighted_pb_sum / total_weight
+        
+        result = {
+            'etf_code': etf_code,
+            'weighted_average_pb': weighted_average_pb,
+            'total_weight': total_weight,
+            'stock_count': len(stock_pb_data),
+            'total_stock_count': len(etf_holdings),
+            'stock_details': stock_pb_data
+        }
+        
+        print("=" * 50)
+        print(f"ETF {etf_code} 的PB计算完成:")
+        print(f"  加权平均PB值: {weighted_average_pb:.4f}")
+        print(f"  有效计算股票数: {len(stock_pb_data)}/{len(etf_holdings)}")
+        print(f"  有效权重总和: {total_weight*100:.2f}%")
+        
+        return result
+    else:
+        print("没有有效的PB数据可用于计算")
+        return None
+
+def display_etf_pb_analysis(etf_code):
+    """
+    显示ETF的PB分析结果
+    
+    Args:
+        etf_code (str): ETF代码
+    """
+    result = calculate_etf_pb(etf_code)
+    
+    if result:
+        print("\n" + "=" * 60)
+        print(f"ETF {result['etf_code']} PB分析报告")
+        print("=" * 60)
+        print(f"加权平均PB值: {result['weighted_average_pb']:.4f}")
+        print(f"有效计算股票数: {result['stock_count']}/{result['total_stock_count']}")
+        print(f"有效权重总和: {result['total_weight']*100:.2f}%")
+        
+        # 估值评估
+        pb_value = result['weighted_average_pb']
+        if pb_value < 1:
+            evaluation = "低于1，可能表示ETF整体估值偏低"
+        elif pb_value < 3:
+            evaluation = "在1-3之间，属于正常估值范围"
+        else:
+            evaluation = "高于3，可能表示ETF整体估值偏高"
+        
+        print(f"估值评价: {evaluation}")
+        
+        # 显示前5只股票的详细信息
+        print("\n前5只股票的PB详情:")
+        print("-" * 60)
+        print(f"{'股票代码':<10} {'股票名称':<10} {'权重':<8} {'PB值':<10} {'加权贡献':<10}")
+        print("-" * 60)
+        
+        for i, stock in enumerate(result['stock_details'][:5]):
+            print(f"{stock['股票代码']:<10} {stock['股票名称']:<10} "
+                  f"{stock['权重']*100:>7.2f}% {stock['PB值']:>9.4f} "
+                  f"{stock['加权贡献']:>9.6f}")
+
+# 主程序入口
 if __name__ == "__main__":
-    # 直接指定ETF代码，无需交互式输入
-    etf_code = "588170"  # 指定要处理的ETF代码
-    process_etf_stocks(etf_code)
+    etf_code = "588170"  # 指定ETF代码
+    display_etf_pb_analysis(etf_code)
