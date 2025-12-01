@@ -60,6 +60,20 @@ def init_database():
         )
     ''')
     
+    # 创建总股本变动数据表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS total_shares_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            stock_code TEXT NOT NULL,
+            change_date DATE NOT NULL,
+            total_shares REAL,
+            restricted_shares REAL,
+            circulating_shares REAL,
+            change_reason TEXT,
+            UNIQUE(stock_code, change_date)
+        )
+    ''')
+    
     conn.commit()
     conn.close()
 
@@ -87,10 +101,22 @@ def save_price_data_to_db(stock_code, price_data):
         'volume': 'volume'
     })
     
-    # 保存到数据库，冲突时替换
-    price_data_with_code.to_sql('stock_price', conn, if_exists='replace', index=False, 
-                               method='multi')
+    # 保存到数据库，冲突时忽略（保留已有数据）
+    for index, row in price_data_with_code.iterrows():
+        try:
+            cursor = conn.cursor()
+            # 将日期转换为字符串格式
+            date_str = row['date'].strftime('%Y-%m-%d') if pd.notnull(row['date']) else None
+            cursor.execute('''
+                INSERT OR IGNORE INTO stock_price 
+                (stock_code, date, open, high, low, close, volume)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (row['stock_code'], date_str, row['open'], row['high'], 
+                  row['low'], row['close'], row['volume']))
+        except Exception as e:
+            print(f"保存股价数据时出错: {e}")
     
+    conn.commit()
     conn.close()
     print(f"股价数据已保存到数据库，共 {len(price_data_with_code)} 条记录 (近5年)")
 
@@ -140,10 +166,21 @@ def save_net_assets_to_db(stock_code, net_assets_data):
         '净资产(元)': 'net_assets'
     })
     
-    # 保存到数据库，冲突时替换
-    net_assets_with_code.to_sql('net_assets', conn, if_exists='replace', index=False,
-                               method='multi')
+    # 保存到数据库，冲突时忽略（保留已有数据）
+    for index, row in net_assets_with_code.iterrows():
+        try:
+            cursor = conn.cursor()
+            # 将日期转换为字符串格式
+            report_date_str = row['report_date'].strftime('%Y-%m-%d') if pd.notnull(row['report_date']) else None
+            cursor.execute('''
+                INSERT OR IGNORE INTO net_assets 
+                (stock_code, report_date, equity, net_assets)
+                VALUES (?, ?, ?, ?)
+            ''', (row['stock_code'], report_date_str, row['equity'], row['net_assets']))
+        except Exception as e:
+            print(f"保存净资产数据时出错: {e}")
     
+    conn.commit()
     conn.close()
     print(f"净资产数据已保存到数据库，共 {len(net_assets_with_code)} 条记录 (近5年)")
 
@@ -196,10 +233,23 @@ def save_pb_to_db(stock_code, pb_data):
         'pb': 'pb'
     })
     
-    # 保存到数据库，冲突时替换
-    pb_data_with_code.to_sql('daily_pb', conn, if_exists='replace', index=False,
-                            method='multi')
+    # 保存到数据库，冲突时忽略（保留已有数据）
+    for index, row in pb_data_with_code.iterrows():
+        try:
+            cursor = conn.cursor()
+            # 将日期转换为字符串格式
+            date_str = row['date'].strftime('%Y-%m-%d') if pd.notnull(row['date']) else None
+            report_date_str = row['report_date'].strftime('%Y-%m-%d') if pd.notnull(row['report_date']) else None
+            cursor.execute('''
+                INSERT OR IGNORE INTO daily_pb 
+                (stock_code, date, close_price, total_shares, market_cap, net_assets, report_date, pb)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (row['stock_code'], date_str, row['close_price'], row['total_shares'],
+                  row['market_cap'], row['net_assets'], report_date_str, row['pb']))
+        except Exception as e:
+            print(f"保存PB数据时出错: {e}")
     
+    conn.commit()
     conn.close()
     print(f"PB数据已保存到数据库，共 {len(pb_data_with_code)} 条记录 (近5年)")
 
@@ -220,11 +270,71 @@ def get_pb_from_db(stock_code):
         pb_data = pd.read_sql_query(query, conn, params=(stock_code, five_years_ago))
         if not pb_data.empty:
             pb_data['date'] = pd.to_datetime(pb_data['date'])
-            if 'report_date' in pb_data.columns:
+            if 'report_date' in pb_data.columns and pb_data['report_date'].dtype == 'object':
                 pb_data['report_date'] = pd.to_datetime(pb_data['report_date'])
         return pb_data
     except Exception as e:
         print(f"从数据库读取PB数据失败: {e}")
+        return pd.DataFrame()
+    finally:
+        conn.close()
+
+def save_total_shares_history_to_db(stock_code, shares_history_data):
+    """
+    将总股本变动历史数据保存到数据库
+    """
+    conn = sqlite3.connect(DB_FILENAME)
+    
+    # 添加股票代码列
+    shares_history_with_code = shares_history_data.copy()
+    shares_history_with_code['stock_code'] = stock_code
+    
+    # 重命名列以匹配数据库结构
+    shares_history_with_code = shares_history_with_code.rename(columns={
+        '变更日期': 'change_date',
+        '总股本': 'total_shares',
+        '流通受限股份': 'restricted_shares',
+        '已流通股份': 'circulating_shares',
+        '变动原因': 'change_reason'
+    })
+    
+    # 保存到数据库，冲突时替换
+    for index, row in shares_history_with_code.iterrows():
+        try:
+            cursor = conn.cursor()
+            # 将日期转换为字符串格式
+            change_date_str = row['change_date'].strftime('%Y-%m-%d') if pd.notnull(row['change_date']) else None
+            cursor.execute('''
+                INSERT OR REPLACE INTO total_shares_history 
+                (stock_code, change_date, total_shares, restricted_shares, circulating_shares, change_reason)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (row['stock_code'], change_date_str, row['total_shares'], 
+                  row['restricted_shares'], row['circulating_shares'], row['change_reason']))
+        except Exception as e:
+            print(f"保存总股本变动历史数据时出错: {e}")
+    
+    conn.commit()
+    conn.close()
+    print(f"总股本变动历史数据已保存到数据库，共 {len(shares_history_with_code)} 条记录")
+
+def get_total_shares_history_from_db(stock_code):
+    """
+    从数据库获取总股本变动历史数据
+    """
+    conn = sqlite3.connect(DB_FILENAME)
+    query = '''
+        SELECT change_date, total_shares, restricted_shares, circulating_shares, change_reason
+        FROM total_shares_history 
+        WHERE stock_code = ?
+        ORDER BY change_date DESC
+    '''
+    try:
+        shares_history_data = pd.read_sql_query(query, conn, params=(stock_code,))
+        if not shares_history_data.empty:
+            shares_history_data['change_date'] = pd.to_datetime(shares_history_data['change_date'])
+        return shares_history_data
+    except Exception as e:
+        print(f"从数据库读取总股本变动历史数据失败: {e}")
         return pd.DataFrame()
     finally:
         conn.close()
