@@ -55,5 +55,5 @@ def process_etf_stocks(etf_code):
 # 直接指定ETF代码
 if __name__ == "__main__":
     # 直接指定ETF代码，无需交互式输入
-    etf_code = "588170"  # 指定要处理的ETF代码
+    etf_code = "588200"  # 指定要处理的ETF代码
     process_etf_stocks(etf_code)

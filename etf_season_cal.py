@@ -29,6 +29,13 @@ def read_etf_holdings(etf_code):
         # 处理占净值比例列，去掉百分号并转换为小数
         df['占净值比例'] = df['占净值比例'].astype(str).str.rstrip('%').astype(float) / 100
         
+        # 过滤掉权重为0的持仓数据
+        original_count = len(df)
+        df = df[df['占净值比例'] > 0]
+        filtered_count = original_count - len(df)
+        if filtered_count > 0:
+            print(f"已过滤掉 {filtered_count} 条权重为0的持仓数据")
+        
         print(f"成功读取ETF {etf_code} 的持仓数据，共{len(df)}条记录")
         
         # 获取所有唯一季度
@@ -67,6 +74,8 @@ def read_etf_holdings(etf_code):
                     # 季度存在，保存当前数据作为后续缺失季度的参考
                     quarter_name = next(qd[2] for qd in quarter_details if qd[0] == year and qd[1] == quarter_num)
                     quarter_data = df[df['季度'] == quarter_name].copy()
+                    # 再次过滤权重为0的数据
+                    quarter_data = quarter_data[quarter_data['占净值比例'] > 0]
                     complete_quarter_data.append(quarter_data)
                     last_known_data = quarter_data.copy()
                 else:
@@ -174,7 +183,7 @@ def calculate_single_quarter_etf_pb_time_series(quarter_data, quarter_name):
         stock_code = row['股票代码'].strip()
         weight = row['占净值比例']
         
-        print(f"正在获取股票 {stock_code} ({row['股票名称']}) 的历史PB数据...")
+        # print(f"正在获取股票 {stock_code} ({row['股票名称']}) 的历史PB数据...")
         
         # 获取股票历史PB数据
         try:
@@ -191,11 +200,11 @@ def calculate_single_quarter_etf_pb_time_series(quarter_data, quarter_name):
                         'name': row['股票名称']
                     }
                     available_stocks.append(stock_code)
-                    print(f"  -> 成功获取 {len(pb_data_filtered)} 条PB记录 (限定在季度日期范围内)")
+                    # print(f"  -> 成功获取 {len(pb_data_filtered)} 条PB记录 (限定在季度日期范围内)")
                 else:
-                    print(f"  -> 在指定日期范围内未找到有效PB数据")
+                    print(f"  -> 股票 {stock_code} 在指定日期范围内未找到有效PB数据")
             else:
-                print(f"  -> 未找到有效PB数据")
+                print(f"  -> 股票 {stock_code} 未找到有效PB数据")
         except Exception as e:
             print(f"  -> 获取股票 {stock_code} 的PB数据时出错: {e}")
     
@@ -486,5 +495,5 @@ def analyze_quarterly_etf_pb(etf_code):
 
 # 主程序入口
 if __name__ == "__main__":
-    etf_code = "588170"  # 指定ETF代码
+    etf_code = "588200"  # 指定ETF代码
     analyze_quarterly_etf_pb(etf_code)
