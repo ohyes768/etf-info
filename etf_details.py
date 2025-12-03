@@ -99,9 +99,33 @@ def batch_fetch_etf_holdings(etf_codes, start_year=2020, end_year=2025):
     
     print(f"\n批量处理完成: 成功 {success_count}/{len(etf_codes)} 只ETF")
 
+def main():
+    """
+    主函数 - 添加交互式输入ETF代码
+    """
+    print("=== ETF持仓数据获取工具 ===")
+    
+    # 交互式输入ETF基金代码
+    etf_input = input("请输入ETF基金代码（可输入单个代码或多个代码用逗号分隔，直接回车使用默认代码588200）: ").strip()
+    
+    # 如果用户没有输入任何内容，使用默认代码
+    if not etf_input:
+        etf_codes = [588200]
+        print("使用默认代码: 588200")
+    else:
+        # 处理多个代码的情况
+        etf_codes = [code.strip() for code in etf_input.split(',')]
+        print(f"将处理以下ETF代码: {etf_codes}")
+    
+    # 判断是单个还是批量处理
+    if len(etf_codes) == 1:
+        print(f"\n开始处理ETF {etf_codes[0]}...")
+        fetch_etf_holdings_to_csv(etf_codes[0], 2020, 2025)
+    else:
+        print(f"\n开始批量处理 {len(etf_codes)} 只ETF...")
+        batch_fetch_etf_holdings(etf_codes, 2020, 2025)
+
 # 主程序入口
 if __name__ == "__main__":
-    # 单个ETF处理示例
-    etf_code = 588200  # 你可以修改为其他ETF代码
-    fetch_etf_holdings_to_csv(etf_code, 2020, 2025)
-    
+    # 使用交互式主函数
+    main()

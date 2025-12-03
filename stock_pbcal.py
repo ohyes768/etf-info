@@ -162,19 +162,25 @@ def get_total_shares_for_date(shares_history, target_date):
 def calculate_daily_pb(stock_code):
     """
     计算股票每日PB值 (近5年)，考虑股本变动历史
+    
+    Returns:
+        tuple: (pb_df, from_database) 其中from_database表示数据是否来自数据库
     """
     # 首先尝试从数据库获取已计算的PB数据
     pb_df = get_pb_from_db(stock_code)
     if not pb_df.empty:
         print("从数据库获取PB数据 (近5年)...")
-        return pb_df
+        return pb_df, True  # 数据来自数据库
+    
+    # 如果数据库中没有数据，则从网络获取
+    print("从网络获取数据计算PB值...")
     
     # 获取净资产数据
     print("获取净资产数据 (近5年)...")
     net_assets_df = get_net_assets_per_quarter(stock_code)
     if net_assets_df.empty:
         print("无法获取净资产数据")
-        return None
+        return None, False
     
     print("净资产数据:")
     print(net_assets_df[['报告期', '所有者权益（或股东权益）合计', '净资产(元)']].head(10))
@@ -184,7 +190,7 @@ def calculate_daily_pb(stock_code):
     price_data = get_stock_price_data(stock_code)
     if price_data is None or price_data.empty:
         print("无法获取股价数据")
-        return None
+        return None, False
     
     # 确保日期列为datetime格式
     price_data['date'] = pd.to_datetime(price_data['date'])
@@ -193,7 +199,7 @@ def calculate_daily_pb(stock_code):
     shares_history = get_total_shares_history(stock_code)
     if shares_history.empty:
         print("无法获取总股本变动历史数据")
-        return None
+        return None, False
     
     print(f"总股本变动历史记录数: {len(shares_history)}")
     
@@ -252,7 +258,7 @@ def calculate_daily_pb(stock_code):
     # 保存到数据库
     save_pb_to_db(stock_code, pb_df)
     
-    return pb_df
+    return pb_df, False  # 数据来自网络计算
 
 # 主程序
 if __name__ == "__main__":
