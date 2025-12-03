@@ -8,5 +8,6 @@ stock_code= "688120.SH";
 # x= ak.fund_announcement_report_em(588170)
 # print(x)
 
-y= ak.fund_portfolio_hold_em(588170,2024)
+y= ak.stock_zh_a_hist("sz588120")
 print(y)
+print(y.columns)
