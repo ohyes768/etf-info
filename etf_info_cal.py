@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 # 在脚本开头添加这一行
 load_dotenv()
+
 def analyze_etf(etf_code):
     """
     分析指定ETF的历史数据
@@ -122,6 +123,21 @@ def analyze_etf(etf_code):
     print(f"日内最大跌幅: {(开盘价 - 最低价) / 开盘价 * 100:.2f}%")
 
     print(f"\n近一年日均成交额: {avg_turnover/100000000:.2f}亿元")
+    
+    # 计算近60日的数据
+    sixty_days_ago = today - timedelta(days=60)
+    recent_60_days_data = recent_data[recent_data['D'] >= sixty_days_ago].copy()
+    
+    # 找出近60日内最大振幅及移除后的平均振幅
+    max_volatility_60_idx = recent_60_days_data['振幅'].idxmax()
+    max_volatility_60_day = recent_60_days_data.loc[max_volatility_60_idx]
+    recent_60_days_data_without_max = recent_60_days_data.drop(max_volatility_60_idx)
+    avg_volatility_60_days_without_max = recent_60_days_data_without_max['振幅'].mean()
+    
+    print(f"\n=== 近60日数据分析 ===")
+    print(f"数据时间范围: {recent_60_days_data['D'].min().strftime('%Y-%m-%d')} 至 {recent_60_days_data['D'].max().strftime('%Y-%m-%d')}")
+    print(f"近60日最大振幅: {max_volatility_60_day['振幅']:.2f}% (日期: {max_volatility_60_day['D'].strftime('%Y-%m-%d')})")
+    print(f"去除最大振幅日后的近60日平均日振幅: {avg_volatility_60_days_without_max:.2f}%")
 
 def main():
     """
