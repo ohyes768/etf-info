@@ -359,12 +359,13 @@ def merge_quarterly_data_to_daily_curve(quarterly_pb_data, quarters_order):
         print("每日曲线合并失败")
         return None
 
-def plot_simple_etf_pb_time_series(pb_data):
+def plot_simple_etf_pb_time_series(pb_data, etf_code=None):
     """
     绘制简单的ETF PB时间序列图，并标注分位信息
     
     Args:
         pb_data (pandas.DataFrame): PB数据，包含[date, pb]列
+        etf_code (str, optional): ETF代码，用于图表标题
     """
     try:
         import matplotlib.pyplot as plt
@@ -407,7 +408,8 @@ def plot_simple_etf_pb_time_series(pb_data):
                        arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0'))
         
         # 设置图表标题和标签
-        ax.set_title('ETF PB时间序列', fontsize=16, pad=20)
+        title = f'ETF {etf_code} PB时间序列' if etf_code else 'ETF PB时间序列'
+        ax.set_title(title, fontsize=16, pad=20)
         ax.set_xlabel('日期', fontsize=12)
         ax.set_ylabel('PB值', fontsize=12)
         
@@ -489,11 +491,30 @@ def analyze_quarterly_etf_pb(etf_code):
     
     # 绘制合并后的ETF PB时间序列图（修改绘图函数以适应新数据结构）
     if simple_pb_data is not None and not simple_pb_data.empty:
-        plot_simple_etf_pb_time_series(simple_pb_data)
+        plot_simple_etf_pb_time_series(simple_pb_data, etf_code)
        
+
+def main():
+    """
+    主函数 - 添加交互式输入ETF代码
+    """
+    print("=== ETF PB时间序列分析工具 ===")
+    
+    # 交互式输入ETF基金代码
+    etf_code = input("请输入ETF基金代码（直接回车使用默认代码512170）: ").strip()
+    
+    # 如果用户没有输入任何内容，使用默认代码
+    if not etf_code:
+        etf_code = "588200"
+        print("使用默认代码: 588200")
+    else:
+        print(f"将分析ETF代码: {etf_code}")
+    
+    print(f"\n开始分析ETF {etf_code} 的PB时间序列...")
+    analyze_quarterly_etf_pb(etf_code)
 
 
 # 主程序入口
 if __name__ == "__main__":
-    etf_code = "588200"  # 指定ETF代码
-    analyze_quarterly_etf_pb(etf_code)
+    # 使用交互式主函数
+    main()
